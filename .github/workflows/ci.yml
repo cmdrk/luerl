@@ -51,6 +51,6 @@ jobs:
       - uses: actions/checkout@v4
       - uses: erlef/setup-beam@v1
         with:
-          otp-version: "27"
-          rebar3-version: "3.24"
+          otp-version: "latest"
+          rebar3-version: "latest"
       - run: rebar3 dialyzer
