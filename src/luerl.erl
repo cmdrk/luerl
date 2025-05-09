@@ -28,6 +28,26 @@ For Elixir users, the `Elixir.Luerl` module provides an idiomatic interface
 with state as the first argument for better pipe operator usage.
 """).
 
+%% Types
+-type state() :: #luerl{}.
+-type func_ref() :: tuple().
+-type lua_term() :: nil | 
+                      boolean() |
+                      binary() |
+                      number() |
+                      #table{} | 
+                      ttdict:ttdict() |
+                      atom() |
+                      #tref{} |
+                      #usdref{} |
+                      #funref{} |
+                      #erl_func{} |
+                      #erl_mfa{}.
+-type lua_result() :: {ok, lua_term(), state()}.
+-type lua_result_dec() :: {ok, term(), state()}.
+-type lua_error() :: {lua_error, term(), state()}.
+
+
 %% Basic user API to luerl.
 -export([init/0,gc/1,
          load/2,load/3,loadfile/2,loadfile/3,
@@ -59,10 +79,15 @@ with state as the first argument for better pipe operator usage.
 
 %% init() -> State.
 
+-spec init() -> State when 
+      State :: state().
 init() ->
     luerl_emul:init().
 
 %% gc(State) -> State.
+
+-spec gc(State) -> State when
+      State :: state().
 gc(St) ->
     luerl_heap:gc(St).
 
@@ -87,6 +112,10 @@ set_trace_data(Tdata, St) ->
 %% load(String|Binary, State) -> {ok,FuncRef,NewState}.
 %% load(String|Binary, Options, State) -> {ok,FuncRef,NewState}.
 
+-spec load(Form, State) -> Result when
+      Form :: string() | binary(),
+      State :: state(),
+      Result :: {ok, func_ref(), state()}.
 load(Bin, St) -> load(Bin, [return], St).
 
 load(Bin, Opts, St) when is_binary(Bin) ->
@@ -103,6 +132,11 @@ load(Str, Opts, St0) ->
 %% loadfile(FileName, State) -> {ok,FuncRef,NewState}.
 %% loadfile(FileName, Options, State) -> {ok,FuncRef,NewState}.
 
+-spec loadfile(File, State) -> Result | Error when
+      File :: file:filename(),
+      State :: state(),
+      Result :: {ok, func_ref(), state()},
+      Error :: {error, list(), list()}.
 loadfile(Name, St) -> loadfile(Name, [return], St).
 
 loadfile(Name, Opts, St0) ->
@@ -121,6 +155,11 @@ loadfile(Name, Opts, St0) ->
 %%  We manually step down the path to get the correct handling of
 %%  filenames by the compiler.
 
+-spec path_loadfile(Files, State) -> Result | Error when
+      Files :: [file:filename()],
+      State :: state(),
+      Result :: {ok, func_ref(), state()},
+      Error :: {error, list(), list()}. % TODO
 path_loadfile(Name, St) ->
     Path = case os:getenv("LUA_LOAD_PATH") of
                false -> [];                     %You get what you asked for
@@ -152,6 +191,10 @@ path_loadfile([], _, _, _) ->
 %% load_module(LuaTablePath, ModuleName, State) -> State.
 %%  Load module and add module table to the path.
 
+-spec load_module(LuaTablePath, Module, State) -> State when
+      LuaTablePath :: [binary()],
+      Module :: module(),
+      State :: state().
 load_module([_|_] = Lfp, Mod, St0) ->
     {Tab,St1} = Mod:install(St0),
     luerl_emul:set_table_keys(Lfp, Tab, St1);
@@ -161,6 +204,10 @@ load_module(_, _, _) ->
 %% load_module_dec(DecodedTablePath, ModuleName, State) -> State.
 %%  Load module and add module table to the path.
 
+-spec load_module_dec(DecodedTablePath, Module, State) -> State when
+      DecodedTablePath :: [term()],
+      Module :: module(),
+      State :: state().
 load_module_dec([_|_] = Dfp, Mod, St0) ->
     {Efp,St1} = encode_list(Dfp, St0),
     load_module(Efp, Mod, St1);
@@ -171,6 +218,11 @@ load_module_dec(_, _, _) ->
 %% luerl:do(String|Binary|Form, CompileOptions, State) ->
 %%     {ok,Result,NewState} | {lua_error,Error,State}.
 
+-spec do(Form, State) -> Result | Error when
+      Form :: string() | binary(),
+      State :: state(),
+      Result :: lua_result(),
+      Error :: lua_error().
 do(S, St) -> do(S, [return], St).
 
 do(S, Opts, St0) ->
@@ -180,6 +232,11 @@ do(S, Opts, St0) ->
         Error -> Error
     end.
 
+-spec do_dec(Form, State) -> Result | Error when
+      Form :: string() | binary(),
+      State :: state(),
+      Result :: lua_result_dec(),
+      Error :: lua_error().
 do_dec(S, St) ->
     do_dec(S, [return], St).
 
@@ -194,6 +251,11 @@ do_dec(S, Opts, St0) ->
 %% luerl:dofile(FileName, CompileOptions, State) ->
 %%     {ok,Result,NewState} | {lua_error,Error,State}.
 
+-spec dofile(File, State) -> Result | Error when
+      File :: file:filename(),
+      State :: state(),
+      Result :: lua_result(),
+      Error :: lua_error().
 dofile(File, St) -> dofile(File, [], St).
 
 dofile(File, Opts, St0) ->
@@ -203,9 +265,20 @@ dofile(File, Opts, St0) ->
         Error -> Error
     end.
 
+-spec dofile_dec(File, State) -> Result | Error when
+      File :: file:filename(),
+      State :: state(),
+      Result :: lua_result_dec(),
+      Error :: lua_error().
 dofile_dec(File, St) ->
     dofile_dec(File, [], St).
 
+-spec dofile_dec(File, Opts, State) -> Result | Error when
+      File :: file:filename(),
+      Opts :: list(), %TODO
+      State :: state(),
+      Result :: lua_result_dec(),
+      Error :: lua_error().
 dofile_dec(File, Opts, St0) ->
     case dofile(File, Opts, St0) of
         {ok,Eret,St1} ->
@@ -230,6 +303,12 @@ call_chunk(C, As, St) ->
 %% call_function(LuaFuncRef | LuaTablePath, Args, State) ->
 %%     {ok,LuaReturn,State} | {lua_error,Error,State}.
 
+-spec call_function(LuaFuncRef | LuaTablePath, Args, state()) -> Result | Error when
+      LuaFuncRef :: [binary()],
+      LuaTablePath :: [binary()],
+      Args :: [binary()],
+      Result :: lua_result(),
+      Error ::  lua_error().
 call_function(Epath, Args, St0) when is_list(Epath) ->
     {ok,Efunc,St1} = get_table_keys(Epath, St0),
     call_function(Efunc, Args, St1);
@@ -245,6 +324,12 @@ call_function(Func, Args, St0) ->
 %% call_function_enc(DecodedFuncRef, Args, State) ->
 %%     {ok,LuaReturn,State} | {lua_error,Error,State}.
 
+-spec call_function_enc(DecodedFuncRef, Args, State) -> Result | Error when
+      DecodedFuncRef :: [atom()],
+      Args :: [term()],
+      State :: state(),
+      Result :: lua_result(),
+      Error :: lua_error().
 call_function_enc(Dtpath, Dargs, St0) ->
     {Epath,St1} = encode_list(Dtpath, St0),
     {Eargs,St2} = encode_list(Dargs, St1),
@@ -253,6 +338,12 @@ call_function_enc(Dtpath, Dargs, St0) ->
 %% call_function_dec(DecodedFuncRef, Args, State) ->
 %%     {ok,DecodedReturn,State} | {lua_error,Error,State}.
 
+-spec call_function_dec(DecodedFuncRef, Args, State) -> Result | Error when
+      DecodedFuncRef :: [atom()],
+      Args :: [term()],
+      State :: state(),
+      Result :: lua_result(),
+      Error :: lua_error().
 call_function_dec(Dtpath, Dargs, St0) ->
     case call_function_enc(Dtpath, Dargs, St0) of
         {ok,Eret,St1} ->
@@ -263,6 +354,13 @@ call_function_dec(Dtpath, Dargs, St0) ->
 %% call_method(LuaObject, Method, Args, State) ->
 %%     {ok,Return,State} | {lua_error,Error,State}.
 
+-spec call_method(LuaObject, Method, Args, State) -> Result | Error when 
+      LuaObject :: term(), % TODO
+      Method :: term(), % TODO
+      Args :: list(),
+      State :: state(),
+      Result :: lua_result(),
+      Error :: lua_error().
 call_method(Obj, Meth, Args, St0) ->
     try
         {Ret,St1} = luerl_emul:methodcall(Obj, Meth, Args, St0),
@@ -275,6 +373,13 @@ call_method(Obj, Meth, Args, St0) ->
 %% call_method_dec(DecodedObject, Method, Args, State) ->
 %%     {ok,DecodedReturn,State} | {lua_error,Error,State}.
 
+-spec call_method_dec(DecodedObject, Method, Args, State) -> Result | Error when 
+      DecodedObject :: term(), % TODO 
+      Method :: term(),% TODO
+      Args :: list(),
+      State :: state(),
+      Result :: lua_result(),
+      Error :: lua_error().
 call_method_dec(Dobj, Dmeth, Dargs, St0) ->
     {ok,Eobj,St1} = get_table_keys_dec(Dobj, St0),
     {Emeth,St2} = encode(Dmeth, St1),
@@ -405,6 +510,10 @@ get_filename(Mod) ->
 encode_list(Ts, St) ->
     lists:mapfoldl(fun encode/2, St, Ts).
 
+-spec encode(Term, State) -> {LuerlTerm, State} when 
+      Term :: term(),
+      LuerlTerm :: lua_term(),
+      State :: state().
 encode(nil, St) -> {nil,St};
 encode(false, St) -> {false,St};
 encode(true, St) -> {true,St};
@@ -451,9 +560,17 @@ encode(Term, _) -> error({badarg,Term}).        %Can't encode anything else
 %%  In decode we track of which tables we have seen to detect
 %%  recursive references and generate an error when that occurs.
 
+-spec decode_list(LuerlTerm, State) -> [Term] when
+      LuerlTerm :: lua_term(),
+      State :: state(),
+      Term :: any().
 decode_list(Lts, St) ->
     lists:map(fun (Lt) -> decode(Lt, St) end, Lts).
 
+-spec decode(LuerlTerm, State) -> Term when
+      LuerlTerm :: lua_term(),
+      State :: state(),
+      Term :: term().
 decode(LT, St) ->
     decode(LT, St, []).
 
@@ -513,9 +630,13 @@ decode_erlmfa(#erl_mfa{m=Mod,f=Func,a=Arg}=_Mfa, _St, _In) ->
 %% can be stored externally or can be recreated from external storage.
 %% Currently very simple: only random state needs special treatment.
 
+-spec externalize(State) -> State when
+      State :: state().
 externalize(S) ->
     luerl_lib_math:externalize(S).
 
+-spec internalize(State) -> State when
+      State :: state().
 internalize(S) ->
     luerl_lib_math:internalize(S).
 
@@ -525,6 +646,7 @@ internalize(S) ->
 %%   Value.
 %% delete_private(Key, State) ->
 %%   Value.
+
 put_private(Key, Value, S) ->
     Private = maps:put(Key, Value, S#luerl.private),
     S#luerl{private=Private}.
