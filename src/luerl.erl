@@ -30,7 +30,7 @@ with state as the first argument for better pipe operator usage.
 
 %% Types
 -type state() :: #luerl{}.
--type func_ref() :: tuple().
+-type func_ref() :: #funref{}.
 -type lua_term() :: nil | 
                       boolean() |
                       binary() |
